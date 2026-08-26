@@ -249,7 +249,8 @@ async function createTransferRecord(
         slot: null,
         initiatedByKeyId: input.initiatedByKeyId ?? null,
         idempotencyKey,
-        idempotencyFingerprint,
+        // HOO-1023: persist the K2 shape until rollback support ends.
+        idempotencyFingerprint: legacyIdempotencyFingerprint,
       });
 
       if (!createdRow) {
@@ -382,6 +383,7 @@ export async function extractTransferPolicyCandidate(
     requiredWalletPermissions: ["payments:write"],
   });
   const privateTransfer = body.privateTransfer as PrivateTransferRequest | undefined;
+  const { sourceCustodyWalletId: _sourceCustodyWalletId, ...legacyBody } = body;
 
   return {
     candidate: buildTransferPolicyCandidate(scope, operation, {
@@ -391,8 +393,10 @@ export async function extractTransferPolicyCandidate(
     legs: [],
     body,
     resolved: { scope, operation, privateTransfer },
+    // HOO-1023: remove this legacy envelope when K2 rollback support ends.
+    executionRequestBody: { ...legacyBody, source: operation.sourceWallet.walletId },
     rawPayload: {
-      sourceCustodyWalletId: body.sourceCustodyWalletId,
+      source: operation.sourceWallet.walletId,
       destination: body.destination,
       token: body.token,
       amount: body.amount,

@@ -494,7 +494,34 @@ function readExecutionRequest(operation: WalletOperationRow): WalletOperationExe
   ) {
     throw new AppError("INTERNAL_ERROR", "Wallet operation has no executable request envelope");
   }
-  return value as unknown as WalletOperationExecutionRequest;
+  const request = value as unknown as WalletOperationExecutionRequest;
+  const expectedPaymentPath =
+    operation.operation_type === "payment_transfer_execute"
+      ? "/v1/payments/transfers"
+      : operation.operation_type === "payment_transfer_batch_execute"
+        ? "/v1/payments/transfer-batches"
+        : null;
+  if (expectedPaymentPath === null) {
+    return request;
+  }
+  if (
+    !operation.custody_wallet_id ||
+    request.path !== expectedPaymentPath ||
+    request.body.source !== operation.wallet_id
+  ) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      "Approved wallet operation does not match persisted wallet identity"
+    );
+  }
+
+  // HOO-1023: remove after rollback support ends and the release audit reports
+  // no nonterminal legacy Payments envelopes.
+  const { source: _source, ...body } = request.body;
+  return {
+    ...request,
+    body: { ...body, sourceCustodyWalletId: operation.custody_wallet_id },
+  };
 }
 
 async function readResponsePayload(response: Response): Promise<Record<string, unknown>> {

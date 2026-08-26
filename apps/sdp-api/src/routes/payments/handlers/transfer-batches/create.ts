@@ -134,6 +134,7 @@ export async function extractTransferBatchPolicyCandidate(
     },
     providerExtensions: {},
   };
+  const { sourceCustodyWalletId: _sourceCustodyWalletId, ...legacyBody } = input;
 
   return {
     candidate,
@@ -148,9 +149,11 @@ export async function extractTransferBatchPolicyCandidate(
       idempotencyFingerprint: buildBatchIdempotencyFingerprint(resolved, input.options),
       legacyIdempotencyFingerprint: buildLegacyBatchIdempotencyFingerprint(resolved, input.options),
     },
+    // HOO-1023: remove this legacy envelope when K2 rollback support ends.
+    executionRequestBody: { ...legacyBody, source: resolved.sourceWallet.walletId },
     rawPayload: {
       externalId: input.externalId === undefined ? null : input.externalId,
-      sourceCustodyWalletId: input.sourceCustodyWalletId,
+      source: resolved.sourceWallet.walletId,
       token: input.token,
       // Resolved destinations ride in the payload so an approved batch pins
       // the exact addresses that were evaluated: a counterparty account whose
@@ -336,7 +339,8 @@ export async function createTransferBatch(c: AppContext) {
           options: body.options === undefined ? {} : body.options,
           initiatedByKeyId: resolved.scope.auth.id,
           idempotencyKey,
-          idempotencyFingerprint,
+          // HOO-1023: persist the K2 shape until rollback support ends.
+          idempotencyFingerprint: idempotencyKey ? resolved.legacyIdempotencyFingerprint : null,
         },
         recipients: resolved.recipients.map((recipient) => ({
           organizationId: resolved.scope.auth.organizationId,

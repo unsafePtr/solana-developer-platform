@@ -901,6 +901,25 @@ describe("Payments routes — transfers", () => {
     expect(approvalRequestId).toMatch(/^appr_/);
     expect(walletOperationId).toMatch(/^wop_/);
 
+    const pendingOperation = await createPostgresPolicyRepository(
+      getDb(env),
+      createTenantScope({ organizationId: TEST_ORG.id, projectId: TEST_PROJECT.id })
+    ).getWalletOperationById(walletOperationId);
+    expect(pendingOperation).toMatchObject({
+      custody_wallet_id: TEST_CUSTODY_WALLET_ID,
+      wallet_id: TEST_WALLET_ID,
+      raw_payload: {
+        source: TEST_WALLET_ID,
+        executionRequest: {
+          body: { source: TEST_WALLET_ID },
+        },
+      },
+    });
+    expect(pendingOperation?.raw_payload).not.toHaveProperty("sourceCustodyWalletId");
+    expect(
+      (pendingOperation?.raw_payload.executionRequest as { body?: Record<string, unknown> })?.body
+    ).not.toHaveProperty("sourceCustodyWalletId");
+
     const beforeApproval = await getDb(env)
       .prepare("SELECT COUNT(*) AS count FROM payment_transfers")
       .first<{ count: number | string }>();
@@ -967,6 +986,81 @@ describe("Payments routes — transfers", () => {
       .prepare("SELECT COUNT(*) AS count FROM payment_transfers")
       .first<{ count: number | string }>();
     expect(Number(transferCount?.count ?? 0)).toBe(1);
+  });
+
+  it("fails an approved Payments replay whose route does not match its operation type", async () => {
+    await seedWalletControlProfile({
+      rules: [
+        {
+          id: "approve-payment-path-tamper",
+          kind: "approval",
+          operationTypes: ["payment_transfer_execute"],
+        },
+      ],
+    });
+    const pendingResponse = await app.request(
+      "/v1/payments/transfers",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TEST_API_KEY.raw}`,
+        },
+        body: JSON.stringify({
+          sourceCustodyWalletId: TEST_CUSTODY_WALLET_ID,
+          destination: TEST_SOLANA_ADDRESSES.wallet2,
+          token: "SOL",
+          amount: "0.1",
+        }),
+      },
+      env
+    );
+    expect(pendingResponse.status).toBe(202);
+    const pendingBody = (await pendingResponse.json()) as {
+      error: { details: { approvalRequestId: string; walletOperationId: string } };
+    };
+    const { approvalRequestId, walletOperationId } = pendingBody.error.details;
+    await getDb(env)
+      .prepare(
+        `UPDATE wallet_operations
+         SET raw_payload = jsonb_set(
+           raw_payload,
+           '{executionRequest,path}',
+           '"/v1/payments/transfer-batches"'::jsonb
+         )
+         WHERE id = ?`
+      )
+      .bind(walletOperationId)
+      .run();
+
+    const repository = createPostgresPolicyRepository(
+      getDb(env),
+      createTenantScope({ organizationId: TEST_ORG.id, projectId: TEST_PROJECT.id })
+    );
+    await repository.updateApprovalRequestStatus({
+      organizationId: TEST_ORG.id,
+      projectId: TEST_PROJECT.id,
+      approvalRequestId,
+      status: "approved",
+      operationStatus: "executing",
+      resolvedBy: TEST_API_KEY.id,
+    });
+
+    expect(await recoverApprovedWalletOperations(env)).toBe(1);
+    expect(await repository.getWalletOperationById(walletOperationId)).toMatchObject({
+      status: "failed",
+      execution_error: "Approved wallet operation does not match persisted wallet identity",
+    });
+    expect(createOrgSignerForCustodyWalletMock).not.toHaveBeenCalled();
+    expect(
+      Number(
+        (
+          await getDb(env)
+            .prepare("SELECT COUNT(*) AS count FROM payment_transfers")
+            .first<{ count: number | string }>()
+        )?.count ?? 0
+      )
+    ).toBe(0);
   });
 
   it("denies a cached selected-wallet binding after its Provider ID becomes ambiguous", async () => {
@@ -2943,6 +3037,15 @@ describe("Payments routes — transfers", () => {
       const firstJson = (await first.json()) as { data: { transfer: { id: string } } };
       const secondJson = (await second.json()) as { data: { transfer: { id: string } } };
       expect(secondJson.data.transfer.id).toBe(firstJson.data.transfer.id);
+      const stored = await getDb(env)
+        .prepare(
+          "SELECT custody_wallet_id, idempotency_fingerprint FROM payment_transfers WHERE id = ?"
+        )
+        .bind(firstJson.data.transfer.id)
+        .first<{ custody_wallet_id: string | null; idempotency_fingerprint: string | null }>();
+      expect(stored?.custody_wallet_id).toBe(TEST_CUSTODY_WALLET_ID);
+      if (!stored?.idempotency_fingerprint) throw new Error("missing idempotency fingerprint");
+      expect(JSON.parse(stored.idempotency_fingerprint)).not.toHaveProperty("custodyWalletId");
       expect(signAndSendMock).not.toHaveBeenCalled();
       expect(sendTransactionMock).toHaveBeenCalledOnce();
     });

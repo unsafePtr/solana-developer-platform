@@ -32,7 +32,7 @@ function withoutPsqlCommands(sql: string): string {
     .join("\n");
 }
 
-it("pins only exactly-one Payments identities and safely migrates executable approvals", async () => {
+it("pins only exactly-one Payments identities without mutating live work", async () => {
   const sql = readFileSync(migrationPath, "utf8");
   const client = new Client({ connectionString: env.DATABASE_URL });
   await client.connect();
@@ -271,12 +271,8 @@ it("pins only exactly-one Payments identities and safely migrates executable app
       {
         id: "request_ambiguous",
         custody_wallet_id: null,
-        status: "canceled",
-        lifecycle: [
-          expect.objectContaining({
-            status: "canceled",
-          }),
-        ],
+        status: "awaiting_payment",
+        lifecycle: [],
       },
       {
         id: "request_unique",
@@ -312,26 +308,13 @@ it("pins only exactly-one Payments identities and safely migrates executable app
       status: string;
     }>(`SELECT id, custody_wallet_id, raw_payload, status FROM wallet_operations ORDER BY id`);
     const byId = new Map(operations.rows.map((row) => [row.id, row]));
-    for (const [id, custodyWalletId] of [
-      ["op_pinned", "cw_project"],
-      ["op_unique", "cw_connection"],
-      ["op_exact_unpinned", "cw_connection"],
-    ] as const) {
-      const operation = byId.get(id);
-      if (!operation) throw new Error(`missing operation ${id}`);
-      expect(operation?.custody_wallet_id).toBe(custodyWalletId);
-      expect(operation?.raw_payload).toMatchObject({
-        sourceCustodyWalletId: custodyWalletId,
-        executionRequest: { body: { sourceCustodyWalletId: custodyWalletId } },
-      });
-      expect(operation?.raw_payload).not.toHaveProperty("source");
-      expect(
-        (operation.raw_payload.executionRequest as { body: Record<string, unknown> }).body
-      ).not.toHaveProperty("source");
-    }
-    expect(byId.get("op_ambiguous")?.status).toBe("canceled");
-    expect(byId.get("op_malformed_exact")?.status).toBe("canceled");
-    expect(byId.get("op_stale_pre_effect")?.status).toBe("failed");
+    expect(byId.get("op_pinned")?.custody_wallet_id).toBe("cw_project");
+    expect(byId.get("op_unique")?.custody_wallet_id).toBeNull();
+    expect(byId.get("op_unique")?.raw_payload).toHaveProperty("source", "provider_connection");
+    expect(byId.get("op_exact_unpinned")?.custody_wallet_id).toBeNull();
+    expect(byId.get("op_ambiguous")?.status).toBe("pending_approval");
+    expect(byId.get("op_malformed_exact")?.status).toBe("pending_approval");
+    expect(byId.get("op_stale_pre_effect")?.status).toBe("executing");
     expect(byId.get("op_live")?.status).toBe("executing");
     expect(byId.get("op_live")?.raw_payload).toHaveProperty("source");
     expect(byId.get("op_post_effect")?.status).toBe("executing");
@@ -340,10 +323,11 @@ it("pins only exactly-one Payments identities and safely migrates executable app
     expect(
       (
         await client.query(
-          `SELECT wallet_operation_id, status FROM approval_requests ORDER BY wallet_operation_id`
+          `SELECT wallet_operation_id, status FROM approval_requests
+           WHERE wallet_operation_id = 'op_ambiguous'`
         )
       ).rows
-    ).toContainEqual({ wallet_operation_id: "op_ambiguous", status: "canceled" });
+    ).toEqual([{ wallet_operation_id: "op_ambiguous", status: "pending" }]);
     expect(
       (
         await client.query(
@@ -381,8 +365,12 @@ it("pins only exactly-one Payments identities and safely migrates executable app
          )
        ORDER BY conname`
     );
-    expect(deleteRules.rows).toHaveLength(4);
-    expect(deleteRules.rows.every((row) => row.confdeltype === "a")).toBe(true);
+    expect(deleteRules.rows).toEqual([
+      { conname: "payment_requests_custody_wallet_id_fkey", confdeltype: "a" },
+      { conname: "payment_transfer_batches_source_custody_wallet_id_fkey", confdeltype: "a" },
+      { conname: "payment_transfers_custody_wallet_id_fkey", confdeltype: "a" },
+      { conname: "wallet_operations_custody_wallet_id_fkey", confdeltype: "n" },
+    ]);
 
     await client.query(`INSERT INTO payment_transfers
       (id, organization_id, project_id, wallet_id, source_address, destination_address, direction)
@@ -413,11 +401,11 @@ it("pins only exactly-one Payments identities and safely migrates executable app
     expect(
       (
         await client.query(
-          `SELECT custody_wallet_id, raw_payload ->> 'sourceCustodyWalletId' AS source
+          `SELECT custody_wallet_id, raw_payload ->> 'source' AS source
            FROM wallet_operations WHERE id = 'op_late'`
         )
       ).rows
-    ).toEqual([{ custody_wallet_id: "cw_connection", source: "cw_connection" }]);
+    ).toEqual([{ custody_wallet_id: null, source: "provider_connection" }]);
     expect(
       (
         await client.query(
@@ -425,9 +413,54 @@ it("pins only exactly-one Payments identities and safely migrates executable app
            FROM payment_requests WHERE id = 'request_late_unresolved'`
         )
       ).rows
-    ).toEqual([{ status: "canceled", lifecycle_count: 1 }]);
+    ).toEqual([{ status: "awaiting_payment", lifecycle_count: 0 }]);
 
-    await client.query(withoutPsqlCommands(readFileSync(auditPath, "utf8")));
+    const missingPathEnvelope = JSON.parse(legacyEnvelope("provider_project")) as {
+      executionRequest: Record<string, unknown>;
+    };
+    delete missingPathEnvelope.executionRequest.path;
+    await client.query(
+      `INSERT INTO wallet_operations
+        (id, organization_id, project_id, custody_wallet_id, wallet_id, operation_type,
+         raw_payload, status)
+       VALUES
+        ('op_audit_missing_path', 'org_a', 'prj_a', 'cw_project', 'provider_project',
+         'payment_transfer_execute', $1, 'pending_approval'),
+        ('op_audit_mismatched_pin', 'org_a', 'prj_a', 'cw_foreign', 'provider_project',
+         'payment_transfer_execute', $2, 'pending_approval'),
+        ('op_audit_exact_envelope', 'org_a', 'prj_a', 'cw_project', 'provider_project',
+         'payment_transfer_execute', $3, 'pending_approval')`,
+      [
+        JSON.stringify(missingPathEnvelope),
+        legacyEnvelope("provider_project"),
+        exactEnvelope("cw_project", "addr_project"),
+      ]
+    );
+
+    const auditSql = readFileSync(auditPath, "utf8");
+    await client.query(withoutPsqlCommands(auditSql));
+    const sectionStart = auditSql.indexOf("\\echo '=== 3.");
+    const queryStart = auditSql.indexOf("\n", sectionStart) + 1;
+    const sectionEnd = auditSql.indexOf("\\echo '=== 4.", queryStart);
+    const auditRows = await client.query<{ classification: string; id: string }>(
+      auditSql.slice(queryStart, sectionEnd)
+    );
+    expect(auditRows.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "op_audit_missing_path",
+          classification: "malformed_legacy_envelope",
+        }),
+        expect.objectContaining({
+          id: "op_audit_mismatched_pin",
+          classification: "mismatched_exact_wallet",
+        }),
+        expect.objectContaining({
+          id: "op_audit_exact_envelope",
+          classification: "unsupported_exact_envelope",
+        }),
+      ])
+    );
   } finally {
     await client.query("ROLLBACK");
     await client.end();

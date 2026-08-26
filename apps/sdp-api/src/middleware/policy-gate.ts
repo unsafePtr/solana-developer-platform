@@ -27,6 +27,8 @@ export interface PolicyGateExtraction {
   body: Record<string, unknown>;
   resolved: unknown;
   rawPayload: Record<string, unknown>;
+  /** HOO-1023: remove with K2 rollback support. */
+  executionRequestBody?: Record<string, unknown>;
   /** Route-owned canonical key to persist on the policy operation. */
   idempotencyKey: string | null;
 }
@@ -134,7 +136,10 @@ export function policyGate(config: PolicyGateConfig): MiddlewareHandler<{ Bindin
         legs,
         rawPayload: {
           ...rawPayload,
-          executionRequest: walletOperationExecutionRequest(c, body),
+          executionRequest: walletOperationExecutionRequest(
+            c,
+            extraction.executionRequestBody ?? body
+          ),
         },
         idempotencyKey: operationIdempotencyKey,
       },

@@ -189,7 +189,7 @@ WHERE batch.source_custody_wallet_id IS DISTINCT FROM transfer.custody_wallet_id
 ORDER BY batch.organization_id, batch.id, transfer.id
 LIMIT 100;
 
-\echo '=== 2b. Unresolved nonterminal Payment Requests (must be zero after catch-up) ==='
+\echo '=== 2b. Unresolved nonterminal Payment Requests (review before cutover) ==='
 SELECT id, organization_id, project_id, status
 FROM payment_requests
 WHERE status = 'awaiting_payment'
@@ -197,7 +197,7 @@ WHERE status = 'awaiting_payment'
 ORDER BY organization_id, id
 LIMIT 100;
 
-\echo '=== 3. Executable legacy Payments Approval envelopes ==='
+\echo '=== 3. Executable Payments Approvals that cannot use compatibility replay ==='
 WITH wallet_scope AS (
   SELECT wallet.id, wallet.wallet_id, wallet.public_key,
          config.organization_id, config.project_id, 'config'::TEXT AS owner_kind
@@ -208,81 +208,53 @@ WITH wallet_scope AS (
          connection.organization_id, connection.project_id, 'connection'::TEXT AS owner_kind
   FROM custody_wallets wallet
   JOIN custody_connections connection ON connection.id = wallet.custody_connection_id
-), resolution AS (
+), audited AS (
   SELECT operation.*,
-         COALESCE(operation.custody_wallet_id,
-                  CASE WHEN matches.match_count = 1 THEN matches.custody_wallet_id END)
-           AS resolved_custody_wallet_id,
-         CASE WHEN operation.custody_wallet_id IS NOT NULL THEN 1 ELSE matches.match_count END
-           AS match_count,
-         operation.raw_payload ->> 'source' = operation.wallet_id
-           AND jsonb_typeof(operation.raw_payload -> 'executionRequest') = 'object'
-           AND operation.raw_payload #>> '{executionRequest,method}' = 'POST'
-           AND (
-             (operation.operation_type = 'payment_transfer_execute'
-              AND operation.raw_payload #>> '{executionRequest,path}' = '/v1/payments/transfers')
-             OR
-             (operation.operation_type = 'payment_transfer_batch_execute'
-              AND operation.raw_payload #>> '{executionRequest,path}' = '/v1/payments/transfer-batches')
-           )
-           AND jsonb_typeof(operation.raw_payload #> '{executionRequest,body}') = 'object'
-           AND operation.raw_payload #>> '{executionRequest,body,source}' = operation.wallet_id
-           AND jsonb_typeof(operation.raw_payload #> '{executionRequest,idempotencyKey}') = 'string'
-           AS legacy_envelope_valid,
-         jsonb_typeof(operation.raw_payload -> 'executionRequest') = 'object'
-           AND operation.raw_payload #>> '{executionRequest,method}' = 'POST'
-           AND (
-             (operation.operation_type = 'payment_transfer_execute'
-              AND operation.raw_payload #>> '{executionRequest,path}' = '/v1/payments/transfers')
-             OR
-             (operation.operation_type = 'payment_transfer_batch_execute'
-              AND operation.raw_payload #>> '{executionRequest,path}' = '/v1/payments/transfer-batches')
-           )
-           AND jsonb_typeof(operation.raw_payload #> '{executionRequest,body}') = 'object'
-           AND jsonb_typeof(operation.raw_payload #> '{executionRequest,idempotencyKey}') = 'string'
-           AND NOT (operation.raw_payload ? 'source')
-           AND NOT ((operation.raw_payload #> '{executionRequest,body}') ? 'source')
-           AND operation.raw_payload ->> 'sourceCustodyWalletId' = COALESCE(
-             operation.custody_wallet_id,
-             CASE WHEN matches.match_count = 1 THEN matches.custody_wallet_id END
-           )
-           AND operation.raw_payload #>> '{executionRequest,body,sourceCustodyWalletId}' = COALESCE(
-             operation.custody_wallet_id,
-             CASE WHEN matches.match_count = 1 THEN matches.custody_wallet_id END
-           )
-           AS exact_envelope_valid
+         EXISTS (
+           SELECT 1
+           FROM wallet_scope wallet
+           WHERE wallet.id = operation.custody_wallet_id
+             AND wallet.organization_id = operation.organization_id
+             AND ((wallet.owner_kind = 'config'
+                   AND (wallet.project_id = operation.project_id OR wallet.project_id IS NULL))
+               OR (wallet.owner_kind = 'connection'
+                   AND wallet.project_id = operation.project_id))
+             AND wallet.wallet_id = operation.wallet_id
+             AND wallet.public_key = operation.raw_payload #>> '{context,sourceAddress}'
+         ) AS exact_wallet_matches
   FROM wallet_operations operation
-  LEFT JOIN LATERAL (
-    SELECT COUNT(*)::INTEGER AS match_count, MIN(wallet.id) AS custody_wallet_id
-    FROM wallet_scope wallet
-    WHERE operation.custody_wallet_id IS NULL
-      AND wallet.organization_id = operation.organization_id
-      AND ((wallet.owner_kind = 'config'
-            AND (wallet.project_id = operation.project_id OR wallet.project_id IS NULL))
-        OR (wallet.owner_kind = 'connection' AND wallet.project_id = operation.project_id))
-      AND wallet.wallet_id = operation.wallet_id
-      AND wallet.public_key = operation.raw_payload #>> '{context,sourceAddress}'
-  ) matches ON TRUE
-  WHERE operation.operation_type IN ('payment_transfer_execute', 'payment_transfer_batch_execute')
-    AND (
-      operation.status IN ('pending_approval', 'executing')
-      OR operation.execution_effect_started_at IS NOT NULL
-    )
+  WHERE operation_type IN ('payment_transfer_execute', 'payment_transfer_batch_execute')
+    AND status IN ('pending_approval', 'executing')
 )
-SELECT id, organization_id, project_id, status, custody_wallet_id, match_count,
-       legacy_envelope_valid, exact_envelope_valid,
+SELECT id, organization_id, project_id, status, custody_wallet_id,
        execution_lease_expires_at, execution_effect_started_at,
        CASE
-         WHEN execution_effect_started_at IS NOT NULL THEN 'post_effect_manual_reconciliation'
-         WHEN status = 'executing' AND execution_lease_expires_at > sdp_iso_now()
-           THEN 'live_execution_wait_for_drain'
-         WHEN resolved_custody_wallet_id IS NULL THEN 'unresolved_stop'
-         WHEN legacy_envelope_valid THEN 'catch_up_rewritable'
-         WHEN exact_envelope_valid AND custody_wallet_id IS NULL THEN 'catch_up_pin_exact_envelope'
-         WHEN exact_envelope_valid THEN 'already_exact'
-         ELSE 'malformed_stop'
+         WHEN custody_wallet_id IS NULL THEN 'missing_exact_wallet'
+         WHEN NOT exact_wallet_matches THEN 'mismatched_exact_wallet'
+         WHEN raw_payload ? 'sourceCustodyWalletId'
+           OR (raw_payload #> '{executionRequest,body}') ? 'sourceCustodyWalletId'
+           THEN 'unsupported_exact_envelope'
+         ELSE 'malformed_legacy_envelope'
        END AS classification
-FROM resolution
+FROM audited
+WHERE custody_wallet_id IS NULL
+   OR NOT exact_wallet_matches
+   OR (
+    raw_payload ->> 'source' IS DISTINCT FROM wallet_id
+    OR raw_payload ? 'sourceCustodyWalletId'
+    OR jsonb_typeof(raw_payload -> 'executionRequest') IS DISTINCT FROM 'object'
+    OR raw_payload #>> '{executionRequest,method}' IS DISTINCT FROM 'POST'
+    OR (operation_type = 'payment_transfer_execute'
+        AND raw_payload #>> '{executionRequest,path}'
+            IS DISTINCT FROM '/v1/payments/transfers')
+    OR (operation_type = 'payment_transfer_batch_execute'
+        AND raw_payload #>> '{executionRequest,path}'
+            IS DISTINCT FROM '/v1/payments/transfer-batches')
+    OR jsonb_typeof(raw_payload #> '{executionRequest,body}') IS DISTINCT FROM 'object'
+    OR raw_payload #>> '{executionRequest,body,source}' IS DISTINCT FROM wallet_id
+    OR (raw_payload #> '{executionRequest,body}') ? 'sourceCustodyWalletId'
+    OR jsonb_typeof(raw_payload #> '{executionRequest,idempotencyKey}') IS DISTINCT FROM 'string'
+  )
 ORDER BY classification, organization_id, id
 LIMIT 100;
 

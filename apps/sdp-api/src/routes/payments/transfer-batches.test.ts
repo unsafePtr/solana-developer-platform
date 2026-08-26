@@ -1687,6 +1687,26 @@ describe("payment transfer batches", () => {
     };
     const { approvalRequestId, walletOperationId } = pendingBody.error.details;
 
+    const repository = createPostgresPolicyRepository(
+      getDb(env),
+      createTenantScope({ organizationId: TEST_ORG.id, projectId: TEST_PROJECT.id })
+    );
+    const pendingOperation = await repository.getWalletOperationById(walletOperationId);
+    expect(pendingOperation).toMatchObject({
+      custody_wallet_id: TEST_CUSTODY_WALLET_ID,
+      wallet_id: TEST_WALLET_ID,
+      raw_payload: {
+        source: TEST_WALLET_ID,
+        executionRequest: {
+          body: { source: TEST_WALLET_ID },
+        },
+      },
+    });
+    expect(pendingOperation?.raw_payload).not.toHaveProperty("sourceCustodyWalletId");
+    expect(
+      (pendingOperation?.raw_payload.executionRequest as { body?: Record<string, unknown> })?.body
+    ).not.toHaveProperty("sourceCustodyWalletId");
+
     const approvedResponse = await app.request(
       `/v1/wallets/approval-requests/${approvalRequestId}/approve`,
       { method: "POST", headers: adminHeaders },
@@ -1709,10 +1729,6 @@ describe("payment transfer batches", () => {
       },
     });
 
-    const repository = createPostgresPolicyRepository(
-      getDb(env),
-      createTenantScope({ organizationId: TEST_ORG.id, projectId: TEST_PROJECT.id })
-    );
     expect(await repository.getWalletOperationById(walletOperationId)).toMatchObject({
       status: "completed",
       execution_error: null,
@@ -1878,6 +1894,19 @@ describe("payment transfer batches", () => {
     expect(operationsAfterSecond).toEqual(operationsAfterFirst);
     expect(signAndSendMock).toHaveBeenCalledTimes(1);
     expect(createOrgSignerForCustodyWalletMock).toHaveBeenCalledTimes(1);
+
+    const stored = await getDb(env)
+      .prepare(
+        "SELECT source_custody_wallet_id, idempotency_fingerprint FROM payment_transfer_batches WHERE id = ?"
+      )
+      .bind((firstBody.data as { batch: { id: string } }).batch.id)
+      .first<{
+        source_custody_wallet_id: string | null;
+        idempotency_fingerprint: string | null;
+      }>();
+    expect(stored?.source_custody_wallet_id).toBe(TEST_CUSTODY_WALLET_ID);
+    if (!stored?.idempotency_fingerprint) throw new Error("missing idempotency fingerprint");
+    expect(JSON.parse(stored.idempotency_fingerprint)).not.toHaveProperty("sourceCustodyWalletId");
 
     const count = await getDb(env)
       .prepare(
