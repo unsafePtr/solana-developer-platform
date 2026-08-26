@@ -106,6 +106,13 @@ WHERE request.id = unique_matches.request_id
 
 DROP VIEW k3_payments_wallet_scope;
 
+ALTER TABLE wallet_operations
+    DROP CONSTRAINT wallet_operations_custody_wallet_id_fkey,
+    ADD CONSTRAINT wallet_operations_custody_wallet_id_fkey
+        FOREIGN KEY (custody_wallet_id)
+        REFERENCES custody_wallets(id)
+        ON DELETE NO ACTION;
+
 ALTER TABLE payment_transfers
     ADD CONSTRAINT payment_transfers_custody_wallet_id_fkey
         FOREIGN KEY (custody_wallet_id)

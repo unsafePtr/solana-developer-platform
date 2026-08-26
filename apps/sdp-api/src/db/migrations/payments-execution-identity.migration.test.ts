@@ -369,7 +369,7 @@ it("pins only exactly-one Payments identities without mutating live work", async
       { conname: "payment_requests_custody_wallet_id_fkey", confdeltype: "a" },
       { conname: "payment_transfer_batches_source_custody_wallet_id_fkey", confdeltype: "a" },
       { conname: "payment_transfers_custody_wallet_id_fkey", confdeltype: "a" },
-      { conname: "wallet_operations_custody_wallet_id_fkey", confdeltype: "n" },
+      { conname: "wallet_operations_custody_wallet_id_fkey", confdeltype: "a" },
     ]);
 
     await client.query(`INSERT INTO payment_transfers

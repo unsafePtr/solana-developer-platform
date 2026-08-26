@@ -14,6 +14,7 @@ describe("fetchDashboardPaymentTransfersForWallets", () => {
           data: [
             {
               id: `transfer-${custodyWalletId}`,
+              custodyWalletId,
               providerWalletId: `provider-wallet-${custodyWalletId}`,
               status: "confirmed",
               signature: `signature-${custodyWalletId}`,
@@ -169,7 +170,7 @@ describe("fetchPaymentTransfers", () => {
     });
   });
 
-  it.each([undefined, "", "   "])(
+  it.each([undefined, "", "   ", " wallet-1 "])(
     "fails closed when providerWalletId is %j",
     async (providerWalletId) => {
       const request = vi.fn(
@@ -179,8 +180,10 @@ describe("fetchPaymentTransfers", () => {
               data: [
                 {
                   id: "transfer-1",
+                  custodyWalletId: null,
                   providerWalletId,
                   status: "confirmed",
+                  rampsMemo: {},
                 },
               ],
             }),
@@ -192,7 +195,7 @@ describe("fetchPaymentTransfers", () => {
 
       expect(result).toEqual({
         ok: false,
-        error: "Malformed transfer response: providerWalletId is missing",
+        error: "Malformed transfer response: required fields are missing or invalid",
       });
     }
   );
@@ -205,6 +208,7 @@ describe("fetchPaymentTransfers", () => {
             data: [
               {
                 id: "transfer-1",
+                custodyWalletId: null,
                 providerWalletId: "wallet-1",
                 status: "confirmed",
               },
@@ -218,7 +222,38 @@ describe("fetchPaymentTransfers", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "Malformed transfer response: rampsMemo is missing or invalid",
+      error: "Malformed transfer response: required fields are missing or invalid",
     });
   });
+
+  it.each([undefined, "", "   ", " cwlt-1 ", 42])(
+    "fails closed when custodyWalletId is %j",
+    async (custodyWalletId) => {
+      const request = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "transfer-1",
+                  custodyWalletId,
+                  providerWalletId: "wallet-1",
+                  status: "confirmed",
+                  signature: null,
+                  rampsMemo: {},
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+      );
+
+      const result = await fetchPaymentTransfers(request, 5, { includeObserved: false });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Malformed transfer response: required fields are missing or invalid",
+      });
+    }
+  );
 });

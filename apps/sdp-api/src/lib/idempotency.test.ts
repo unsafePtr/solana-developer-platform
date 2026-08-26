@@ -127,7 +127,9 @@ describe("buildPaymentTransferFingerprint", () => {
   });
 
   it("keeps the pre-K3 fingerprint available for compatible legacy replay", () => {
-    expect(buildLegacyPaymentTransferFingerprint(base)).not.toContain("custodyWalletId");
+    expect(buildLegacyPaymentTransferFingerprint(base)).toBe(
+      '{"amount":"1","destinationAddress":"Dst","memo":null,"privateTransfer":null,"scope":"payment_transfer","sourceAddress":"Src","token":"SOL","type":"transfer"}'
+    );
   });
 
   it("differs when a money-relevant field changes", () => {
@@ -242,7 +244,9 @@ describe("buildTransferBatchFingerprint", () => {
         recipients: [firstRecipient],
         options: undefined,
       })
-    ).not.toContain("sourceCustodyWalletId");
+    ).toBe(
+      '{"options":null,"recipients":[{"amount":"1.5","counterpartyAccountId":"account-1","counterpartyId":"counterparty-1","destinationAddress":"Destination111","externalId":"recipient-1"}],"scope":"payment_transfer_batch","sourceAddress":"Source111","token":"SOL"}'
+    );
   });
 
   it("preserves recipient order", () => {

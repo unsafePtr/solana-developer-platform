@@ -8,7 +8,11 @@ import { z } from "zod";
 import type { SdpApiClient } from "@/lib/sdp-api";
 import { parsePaymentApiErrorText } from "./payment-api-errors";
 
-const rampsMemoSchema = z.record(z.string(), z.string());
+const paymentTransferRequiredFieldsSchema = z.object({
+  custodyWalletId: z.string().min(1).regex(/^\S+$/).nullable(),
+  providerWalletId: z.string().min(1).regex(/^\S+$/),
+  rampsMemo: z.record(z.string(), z.string()),
+});
 
 export interface FetchResult<T> {
   ok: boolean;
@@ -134,10 +138,13 @@ export async function fetchPaymentsAggregate(
 function normalizePaymentTransfer(
   transfer: Partial<PaymentTransferSummary>
 ): PaymentTransferSummary {
+  const requiredFields = paymentTransferRequiredFieldsSchema.safeParse(transfer);
+  if (!requiredFields.success) {
+    throw new Error("Malformed transfer response: required fields are missing or invalid");
+  }
+
   const {
     id,
-    custodyWalletId,
-    providerWalletId,
     status,
     signature,
     type,
@@ -147,7 +154,6 @@ function normalizePaymentTransfer(
     token,
     amount,
     memo,
-    rampsMemo,
     provider,
     counterpartyId,
     counterpartyDisplayName,
@@ -160,19 +166,12 @@ function normalizePaymentTransfer(
     createdAt,
     updatedAt,
   } = transfer;
-
-  if (typeof providerWalletId !== "string" || providerWalletId.trim().length === 0) {
-    throw new Error("Malformed transfer response: providerWalletId is missing");
-  }
-  const parsedRampsMemo = rampsMemoSchema.safeParse(rampsMemo);
-  if (!parsedRampsMemo.success) {
-    throw new Error("Malformed transfer response: rampsMemo is missing or invalid");
-  }
+  const { custodyWalletId, providerWalletId, rampsMemo } = requiredFields.data;
 
   return Object.fromEntries(
     Object.entries({
       id: id ?? "",
-      custodyWalletId: custodyWalletId ?? null,
+      custodyWalletId,
       providerWalletId,
       status: status ?? "pending",
       signature: signature ?? null,
@@ -183,7 +182,7 @@ function normalizePaymentTransfer(
       token,
       amount,
       memo,
-      rampsMemo: parsedRampsMemo.data,
+      rampsMemo,
       provider,
       counterpartyId,
       counterpartyDisplayName,

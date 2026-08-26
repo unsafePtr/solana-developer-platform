@@ -144,7 +144,7 @@ function paymentTransferFingerprint(
   return JSON.stringify(
     normalizeForFingerprint({
       scope: "payment_transfer",
-      ...(custodyWalletId === undefined ? {} : { custodyWalletId }),
+      custodyWalletId,
       sourceAddress: input.sourceAddress,
       destinationAddress: input.destinationAddress,
       token: input.token,
@@ -170,7 +170,7 @@ function transferBatchFingerprint(
   return JSON.stringify(
     normalizeForFingerprint({
       scope: "payment_transfer_batch",
-      ...(sourceCustodyWalletId === undefined ? {} : { sourceCustodyWalletId }),
+      sourceCustodyWalletId,
       sourceAddress: input.sourceAddress,
       token: input.token,
       recipients: input.recipients,

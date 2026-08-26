@@ -566,7 +566,7 @@ export const createTransferRequestSchema = createTransferSchemaBase
     }),
     privateTransfer: privateTransferRequestSchema.optional().openapi({
       description:
-        "Private-transfer routing. SDP asks the provider to build a base-balance private transfer, signs it with the custody wallet when required, and submits it on the configured Solana cluster.",
+        "Private-transfer routing. SDP asks the provider to build a base-balance private transfer, signs it with the custody wallet when required, and submits it on the configured Solana cluster. Any additional required signer must be synchronously allowed by policy; approval-required additional signers return 409 until durable signer-set replay is supported.",
     }),
   })
   .openapi({
