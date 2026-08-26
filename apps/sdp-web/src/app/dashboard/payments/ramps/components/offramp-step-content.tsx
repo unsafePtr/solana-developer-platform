@@ -230,7 +230,7 @@ export function OfframpStepContent({ wizard }: { wizard: OfframpWizard }) {
           direction="offramp"
           quote={quote}
           counterparty={selectedCounterparty}
-          sourceWalletId={fields.walletId}
+          sourceWalletId={selectedWallet.id}
           sourceWalletName={selectedWallet.label ?? selectedWallet.walletId}
           sourceWalletAddress={selectedWallet.publicKey}
           sourceTokenMint={sourceTokenMint}

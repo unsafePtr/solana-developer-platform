@@ -11,6 +11,7 @@ import type { ApiKeyContext } from "@/lib/auth";
 import { AppError, badRequest, conflict } from "@/lib/errors";
 import {
   type ExactApiKeyWalletBinding,
+  loadApiKeyWalletAuthorization,
   normalizeApiKeyWalletPermissions,
 } from "@/services/api-key-wallets.service";
 
@@ -563,4 +564,54 @@ export function resolveApiKeyCustodyWalletId(
     );
   }
   return binding.custodyWalletId as string;
+}
+
+/**
+ * Re-read selected endpoint wallet permissions before new exact-wallet work.
+ * The request auth context may contain a one-hour KV snapshot; duplicate
+ * Provider wallet IDs must become deny-only immediately for Payments writes.
+ */
+export async function assertFreshApiKeyCustodyWalletAccess(
+  db: DatabaseClient,
+  auth: ApiKeyContext,
+  custodyWalletId: string,
+  requiredPermissions: Permission[] = []
+): Promise<void> {
+  if (auth.authType !== "api_key" || !hasSelectedWalletScope(auth)) {
+    return;
+  }
+  if (!auth.projectId) {
+    throw new AppError("FORBIDDEN", "API key is not authorized for the requested wallet");
+  }
+
+  const currentKey = await db
+    .prepare(
+      `SELECT signing_wallet_id
+       FROM api_keys
+       WHERE id = ?
+         AND organization_id = ?
+         AND project_id = ?`
+    )
+    .bind(auth.apiKeyId, auth.organizationId, auth.projectId)
+    .first<{ signing_wallet_id: string | null }>();
+  if (!currentKey) {
+    throw new AppError("FORBIDDEN", "API key is not authorized for the requested wallet");
+  }
+
+  const freshAuthorization = await loadApiKeyWalletAuthorization(
+    db,
+    auth.apiKeyId,
+    auth.organizationId,
+    auth.projectId,
+    currentKey.signing_wallet_id
+  );
+  const resolvedCustodyWalletId = resolveApiKeyCustodyWalletId(
+    { ...auth, ...freshAuthorization },
+    custodyWalletId,
+    requiredPermissions,
+    true
+  );
+  if (resolvedCustodyWalletId !== custodyWalletId) {
+    throw new AppError("FORBIDDEN", "API key is not authorized for the requested wallet");
+  }
 }

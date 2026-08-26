@@ -82,11 +82,18 @@ export function useOnrampWizard(props: UseRampWizardProps) {
     advanceRequirementsBeforeQuote: true,
     selectionSchema: depositSelectionSchema,
     quoteEndpoint: "/api/dashboard/payments/ramps/onramp/quote",
-    buildQuotePayload: ({ fields, provider, selectedRampPair, cryptoToken, rampsMemo }) =>
+    buildQuotePayload: ({
+      fields,
+      selectedWallet,
+      provider,
+      selectedRampPair,
+      cryptoToken,
+      rampsMemo,
+    }) =>
       ({
         provider,
         counterpartyId: fields.counterpartyId,
-        destinationWallet: fields.walletId,
+        destinationWallet: selectedWallet.walletId,
         cryptoToken,
         fiatCurrency: selectedRampPair.fiatCurrency,
         fiatAmount: fields.amount.trim(),
@@ -146,6 +153,9 @@ export function useOnrampWizard(props: UseRampWizardProps) {
     ) {
       return;
     }
+    if (!wizard.selectedWallet) {
+      return;
+    }
 
     setQuoteSimulationLoading(true);
     const toastId = toast.loading(t("DashboardPayments.ramps.simulatingQuoteFunding"), {
@@ -190,7 +200,7 @@ export function useOnrampWizard(props: UseRampWizardProps) {
               amount: Number(wizard.fields.amount.trim()),
               fiatCurrency: wizard.selectedRampPair.fiatCurrency,
               cryptoToken: toRampCryptoToken(wizard.selectedRampPair.assetRail),
-              destinationWallet: wizard.fields.walletId,
+              destinationWallet: wizard.selectedWallet.walletId,
             },
           },
           t

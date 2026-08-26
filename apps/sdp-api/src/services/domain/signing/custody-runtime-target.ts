@@ -68,7 +68,7 @@ export type CustodyRuntimeWalletProjection = {
   walletId: string;
   publicKey: string;
   label: string | null;
-  purpose: string | null;
+  purpose: CustodyWalletPurpose | null;
   status: "active";
   createdAt: string;
 } & (
@@ -1243,7 +1243,7 @@ export class CustodyRuntimeTargets {
       walletId: row.wallet_id,
       publicKey: row.wallet_public_key,
       label: row.wallet_label,
-      purpose: row.wallet_purpose,
+      purpose: row.wallet_purpose as CustodyWalletPurpose | null,
       status: "active",
       createdAt: row.wallet_created_at,
     };
@@ -1263,7 +1263,7 @@ export class CustodyRuntimeTargets {
       walletId: row.wallet_id,
       publicKey: row.wallet_public_key,
       label: row.wallet_label,
-      purpose: row.wallet_purpose,
+      purpose: row.wallet_purpose as CustodyWalletPurpose | null,
       status: "active",
       createdAt: row.wallet_created_at,
     };

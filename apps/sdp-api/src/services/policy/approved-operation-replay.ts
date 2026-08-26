@@ -51,6 +51,27 @@ export function approvedWalletOperationAttemptId(
   return c.get("approvedWalletOperationAttemptId");
 }
 
+export async function assertApprovedWalletOperationCustodyWallet(
+  c: Context<{ Bindings: Env }>,
+  custodyWalletId: string | null
+): Promise<void> {
+  const operationId = approvedWalletOperationId(c);
+  if (!operationId) {
+    return;
+  }
+
+  const operation = await createPolicyRepository(
+    c.env,
+    getRequestTenantScope(c)
+  ).getWalletOperationById(operationId);
+  if (!operation || operation.custody_wallet_id !== custodyWalletId) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Approved wallet operation does not match persisted wallet identity"
+    );
+  }
+}
+
 /**
  * Durably fences an approved replay immediately before an external submission.
  * Normal requests are a no-op and repeat fences for the same leased attempt are

@@ -511,15 +511,17 @@ export const listOfframpCurrenciesQuerySchema = z.object({
   provider: rampProviderSchema.optional(),
 });
 
-export const createTransferSchema = z.object({
-  projectId: z.string().min(1).optional(),
-  source: z.string().min(1),
-  destination: solanaAddressSchema("destination"),
-  token: paymentTokenSchema,
-  amount: paymentAmountSchema,
-  memo: z.string().max(256).optional(),
-  privateTransfer: privateTransferSchema.optional(),
-});
+export const createTransferSchema = z
+  .object({
+    projectId: z.string().min(1).optional(),
+    sourceCustodyWalletId: z.string().min(1),
+    destination: solanaAddressSchema("destination"),
+    token: paymentTokenSchema,
+    amount: paymentAmountSchema,
+    memo: z.string().max(256).optional(),
+    privateTransfer: privateTransferSchema.optional(),
+  })
+  .strict();
 
 export const transferDirectionSchema = z.enum(["inbound", "outbound"]);
 
@@ -541,48 +543,51 @@ const transferFilterTimestampSchema = z
   .datetime({ offset: true })
   .transform((value) => new Date(value).toISOString());
 
-export const listTransfersQuerySchema = z.object({
-  wallet: z.string().optional(),
-  walletAddress: z.string().optional(),
-  search: z
-    .string()
-    .trim()
-    .max(200)
-    .refine((value) => value.length === 0 || value.length >= 3, {
-      message: "Search must be blank or contain at least 3 characters",
-    })
-    .optional(),
-  token: z.string().optional(),
-  direction: transferDirectionSchema.optional(),
-  status: z
-    .string()
-    .transform((value) => value.split(","))
-    .pipe(z.array(transferStatusSchema).min(1))
-    .optional(),
-  category: z.enum(["wallet", "ramp"]).optional(),
-  type: z
-    .string()
-    .transform((value) => value.split(","))
-    .pipe(
-      z
-        .array(z.enum(["transfer", "transfer_confidential", "transfer_batch", "onramp", "offramp"]))
-        .min(1)
-    )
-    .optional(),
-  counterpartyId: z.string().min(1).optional(),
-  provider: rampProviderSchema.optional(),
-  providerReference: z.string().min(1).optional(),
-  from: transferFilterTimestampSchema.optional(),
-  to: transferFilterTimestampSchema.optional(),
-  includeObserved: z
-    .enum(["true", "false"])
-    .transform((value) => value === "true")
-    .default(true),
-  sortBy: z.enum(["createdAt", "updatedAt", "amount", "status"]).default("createdAt"),
-  sortDirection: z.enum(["asc", "desc"]).default("desc"),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const listTransfersQuerySchema = z
+  .object({
+    custodyWalletId: z.string().min(1).optional(),
+    search: z
+      .string()
+      .trim()
+      .max(200)
+      .refine((value) => value.length === 0 || value.length >= 3, {
+        message: "Search must be blank or contain at least 3 characters",
+      })
+      .optional(),
+    token: z.string().optional(),
+    direction: transferDirectionSchema.optional(),
+    status: z
+      .string()
+      .transform((value) => value.split(","))
+      .pipe(z.array(transferStatusSchema).min(1))
+      .optional(),
+    category: z.enum(["wallet", "ramp"]).optional(),
+    type: z
+      .string()
+      .transform((value) => value.split(","))
+      .pipe(
+        z
+          .array(
+            z.enum(["transfer", "transfer_confidential", "transfer_batch", "onramp", "offramp"])
+          )
+          .min(1)
+      )
+      .optional(),
+    counterpartyId: z.string().min(1).optional(),
+    provider: rampProviderSchema.optional(),
+    providerReference: z.string().min(1).optional(),
+    from: transferFilterTimestampSchema.optional(),
+    to: transferFilterTimestampSchema.optional(),
+    includeObserved: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true")
+      .default(false),
+    sortBy: z.enum(["createdAt", "updatedAt", "amount", "status"]).default("createdAt"),
+    sortDirection: z.enum(["asc", "desc"]).default("desc"),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
 
 export const priorityFeeSchema = z.enum(["none", "low", "medium", "high", "auto"]);
 
@@ -620,25 +625,29 @@ export const transferBatchOptionsSchema = z.object({
   preflight: z.boolean().optional(),
 });
 
-export const createTransferBatchSchema = z.object({
-  projectId: z.string().min(1).optional(),
-  externalId: z.string().min(1).max(256).optional(),
-  source: z.string().min(1),
-  token: paymentTokenSchema,
-  recipients: z.array(transferBatchRecipientSchema).min(1).max(500),
-  options: transferBatchOptionsSchema.optional(),
-});
+export const createTransferBatchSchema = z
+  .object({
+    projectId: z.string().min(1).optional(),
+    externalId: z.string().min(1).max(256).optional(),
+    sourceCustodyWalletId: z.string().min(1),
+    token: paymentTokenSchema,
+    recipients: z.array(transferBatchRecipientSchema).min(1).max(500),
+    options: transferBatchOptionsSchema.optional(),
+  })
+  .strict();
 
 export const estimateTransferBatchSchema = createTransferBatchSchema;
 
-export const listTransferBatchesQuerySchema = z.object({
-  wallet: z.string().optional(),
-  token: z.string().optional(),
-  status: transferBatchStatusSchema.optional(),
-  externalId: z.string().min(1).max(256).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const listTransferBatchesQuerySchema = z
+  .object({
+    sourceCustodyWalletId: z.string().min(1).optional(),
+    token: z.string().optional(),
+    status: transferBatchStatusSchema.optional(),
+    externalId: z.string().min(1).max(256).optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
 
 export const estimateOnrampSchema = z.object({
   assetRail: onrampCryptoRailSchema,

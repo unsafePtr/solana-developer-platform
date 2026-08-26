@@ -23,6 +23,8 @@ function transfer(overrides: Partial<PaymentTransferSummary>): PaymentTransferSu
     status: "confirmed",
     signature: null,
     rampsMemo: {},
+    custodyWalletId: null,
+    providerWalletId: "privy_test",
     ...overrides,
   };
 }
@@ -47,6 +49,8 @@ describe("GET /api/dashboard/payments/transactions/export", () => {
             id: "trf_1",
             amount: "12.50",
             token: "USDC",
+            custodyWalletId: null,
+            providerWalletId: "privy_1",
             memo: 'Invoice, "Q3"\npaid',
             createdAt: "2026-07-27T10:00:00.000Z",
           }),
@@ -57,7 +61,7 @@ describe("GET /api/dashboard/payments/transactions/export", () => {
     mocks.createSdpApiClient.mockResolvedValue({ request });
 
     const response = await GET(
-      exportRequest("?search=invoice&status=confirmed&wallet=wal_1&page=4")
+      exportRequest("?search=invoice&status=confirmed&custodyWalletId=cwlt_1&page=4")
     );
 
     expect(response.status).toBe(200);
@@ -71,12 +75,14 @@ describe("GET /api/dashboard/payments/transactions/export", () => {
     expect(apiPath.pathname).toBe("/v1/payments/transfers");
     expect(apiPath.searchParams.get("search")).toBe("invoice");
     expect(apiPath.searchParams.get("status")).toBe("confirmed");
-    expect(apiPath.searchParams.get("wallet")).toBe("wal_1");
+    expect(apiPath.searchParams.get("custodyWalletId")).toBe("cwlt_1");
+    expect(apiPath.searchParams.has("wallet")).toBe(false);
+    expect(apiPath.searchParams.get("includeObserved")).toBe("false");
     expect(apiPath.searchParams.get("page")).toBe("1");
     expect(apiPath.searchParams.get("pageSize")).toBe("100");
 
     const csvHeader =
-      "id,createdAt,updatedAt,type,status,direction,amount,token,walletId,counterpartyId,source,destination,provider,providerReference,signature,memo";
+      "id,createdAt,updatedAt,type,status,direction,amount,token,custodyWalletId,providerWalletId,counterpartyId,source,destination,provider,providerReference,signature,memo";
     const csvRow = [
       "trf_1",
       "2026-07-27T10:00:00.000Z",
@@ -87,6 +93,7 @@ describe("GET /api/dashboard/payments/transactions/export", () => {
       "12.50",
       "USDC",
       "",
+      "privy_1",
       "",
       "",
       "",
@@ -126,11 +133,11 @@ describe("GET /api/dashboard/payments/transactions/export", () => {
     const csv = await response.text();
 
     expect(csv).toContain(
-      "trf_formula,,,,confirmed,,'=1+1,,,,'+source,,,' \t@reference,,'\u0000-memo\n"
+      "trf_formula,,,,confirmed,,'=1+1,,,privy_test,,'+source,,,' \t@reference,,'\u0000-memo\n"
     );
 
     expect(csv).toContain(
-      "trf_unicode_formula,,,,confirmed,,'\u00a0=1+1,,,,'\u200b+source,,,'\u2060@reference,,'\ufeff-memo\n"
+      "trf_unicode_formula,,,,confirmed,,'\u00a0=1+1,,,privy_test,,'\u200b+source,,,'\u2060@reference,,'\ufeff-memo\n"
     );
   });
 

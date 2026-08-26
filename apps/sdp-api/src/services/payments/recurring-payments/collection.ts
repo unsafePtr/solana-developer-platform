@@ -1243,6 +1243,7 @@ export async function collectRecurringPayment(input: {
       const createdTransfer = await transactionPaymentsRepo.createTransfer({
         organizationId: input.organizationId,
         projectId: input.projectId,
+        custodyWalletId: input.sourceWallet.id,
         walletId: input.sourceWallet.walletId,
         counterpartyId: input.recurringPayment.counterparty_id,
         sourceAddress: input.sourceWallet.publicKey,
@@ -1295,11 +1296,11 @@ export async function collectRecurringPayment(input: {
       "destinationAddress"
     );
     const mint = assertValidAddress(input.recurringPayment.token, "token") as Address;
-    const sourceSigner = await solanaServices.createOrgSigner(
+    const sourceSigner = await solanaServices.createOrgSignerForCustodyWallet(
       input.env,
       input.organizationId,
       input.projectId,
-      input.sourceWallet.walletId
+      input.sourceWallet.id
     );
     if (sourceSigner.address !== input.sourceWallet.publicKey) {
       throw badRequest("Resolved signing wallet does not match source wallet");

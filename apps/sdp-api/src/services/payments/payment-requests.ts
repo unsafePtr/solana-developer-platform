@@ -53,6 +53,9 @@ export async function reconcilePaymentRequest(
   if (isPaymentRequestExpired(row.expires_at)) {
     return row;
   }
+  if (row.custody_wallet_id === null) {
+    throw new AppError("CONFLICT", "Payment request wallet identity is unresolved");
+  }
 
   try {
     return await settlePaymentRequestIfPaid(env, row);
@@ -174,6 +177,7 @@ async function recordInboundTransfer(
     const transfer = await paymentsRepo.createTransfer({
       organizationId: row.organization_id,
       projectId,
+      custodyWalletId: row.custody_wallet_id,
       walletId: row.wallet_id,
       counterpartyId: row.counterparty_id,
       sourceAddress: null,
@@ -211,6 +215,18 @@ async function recordInboundTransfer(
     const existing = recorded[0];
     if (!existing) {
       throw err;
+    }
+    if (
+      existing.custody_wallet_id !== row.custody_wallet_id ||
+      existing.wallet_id !== row.wallet_id ||
+      existing.counterparty_id !== row.counterparty_id ||
+      existing.destination_address !== row.destination_address ||
+      existing.token !== row.token ||
+      existing.amount !== row.amount ||
+      existing.type !== "transfer" ||
+      existing.direction !== "inbound"
+    ) {
+      throw new AppError("CONFLICT", "Recorded transfer does not match payment request");
     }
     return existing;
   }

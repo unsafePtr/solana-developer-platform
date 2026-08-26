@@ -50,6 +50,25 @@ function buildTransferListWhere(params: ListTransfersInput): {
   };
 
   addEquals("pt.project_id", params.projectId ?? undefined);
+  if (params.walletAuthorization) {
+    const authorizationClauses: string[] = [];
+    if (params.walletAuthorization.custodyWalletIds.length > 0) {
+      authorizationClauses.push(
+        `pt.custody_wallet_id IN (${buildInClause(params.walletAuthorization.custodyWalletIds.length)})`
+      );
+      values.push(...params.walletAuthorization.custodyWalletIds);
+    }
+    if (params.walletAuthorization.providerWalletIds.length > 0) {
+      authorizationClauses.push(
+        `(pt.custody_wallet_id IS NULL AND pt.wallet_id IN (${buildInClause(params.walletAuthorization.providerWalletIds.length)}))`
+      );
+      values.push(...params.walletAuthorization.providerWalletIds);
+    }
+    clauses.push(
+      authorizationClauses.length > 0 ? `(${authorizationClauses.join(" OR ")})` : "1 = 0"
+    );
+  }
+  addEquals("pt.custody_wallet_id", params.custodyWalletId);
   addEquals("pt.wallet_id", params.walletId);
   // walletIds is an authorization allowlist, not an optional filter: an empty
   // list means "authorized for no wallet" and must match nothing, while the
@@ -135,6 +154,7 @@ function mapTransferRow(row: Record<string, unknown>): PaymentTransferRow {
     id: row.id as string,
     organization_id: row.organization_id as string,
     project_id: (row.project_id as string | null | undefined) ?? null,
+    custody_wallet_id: (row.custody_wallet_id as string | null | undefined) ?? null,
     wallet_id: row.wallet_id as string,
     counterparty_id: row.counterparty_id as string | null,
     counterparty_display_name: row.counterparty_display_name as string | null | undefined,
@@ -223,6 +243,7 @@ export function createPostgresPaymentsRepository(
              id,
              organization_id,
              project_id,
+             custody_wallet_id,
              wallet_id,
              counterparty_id,
              source_address,
@@ -249,13 +270,14 @@ export function createPostgresPaymentsRepository(
              confirmed_at,
              created_at,
              updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, CASE WHEN ?::boolean THEN sdp_iso_now() END, sdp_iso_now(), sdp_iso_now())
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, CASE WHEN ?::boolean THEN sdp_iso_now() END, sdp_iso_now(), sdp_iso_now())
            RETURNING *`
         )
         .bind(
           generatePaymentTransferId(),
           input.organizationId,
           input.projectId,
+          input.custodyWalletId,
           input.walletId,
           input.counterpartyId,
           input.sourceAddress,

@@ -29,6 +29,7 @@ export interface PaymentTransferRow {
   id: string;
   organization_id: string;
   project_id: string | null;
+  custody_wallet_id: string | null;
   wallet_id: string;
   counterparty_id: string | null;
   counterparty_display_name?: string | null;
@@ -78,6 +79,7 @@ export type ConfirmedTransferPollVerdict = {
 export interface CreatePaymentTransferInput {
   organizationId: string;
   projectId: string | null;
+  custodyWalletId: string | null;
   walletId: string;
   counterpartyId: string | null;
   sourceAddress: string | null;
@@ -126,6 +128,11 @@ export interface UpdatePaymentTransferInput {
 export interface ListTransfersInput {
   organizationId: string;
   projectId: string | null;
+  walletAuthorization?: {
+    custodyWalletIds: string[];
+    providerWalletIds: string[];
+  };
+  custodyWalletId?: string;
   walletId?: string;
   walletIds?: string[];
   walletAddress?: string;

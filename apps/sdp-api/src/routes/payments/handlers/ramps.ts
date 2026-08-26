@@ -81,7 +81,12 @@ import {
   type simulateSandboxTransferSchema,
   type submitCounterpartyRequirementsSchema,
 } from "../schemas";
-import { type ResolvedScope, resolveScope, resolveWalletAddress } from "../wallets";
+import {
+  assertFreshPaymentWalletAccess,
+  type ResolvedScope,
+  resolveScope,
+  resolveWalletAddress,
+} from "../wallets";
 import {
   bvnkOnrampQuote,
   completePendingBvnkOfframpTransfer,
@@ -232,9 +237,13 @@ function requireRampTransferWallet(
   walletAddress: string,
   fieldName: string
 ): ScopedRampWallet {
-  const wallet = scope.wallets.find(
+  const matches = scope.wallets.filter(
     (entry) => entry.walletId === walletIdOrAddress || entry.publicKey === walletAddress
   );
+  if (matches.length > 1) {
+    throw conflict("Custody wallet ownership is ambiguous");
+  }
+  const wallet = matches[0];
   if (!wallet) {
     throw badRequest(`${fieldName} must reference an SDP wallet.`);
   }
@@ -287,6 +296,7 @@ async function resolveRampQuoteRequest(
     walletAddress,
     walletFieldName
   );
+  await assertFreshPaymentWalletAccess(c, wallet, ["payments:write"]);
   return { scope, projectId, counterparty, wallet, walletAddress };
 }
 
@@ -415,6 +425,7 @@ async function persistRampQuoteTransfer(
   const created = await repository.createTransfer({
     organizationId: input.scope.auth.organizationId,
     projectId: input.projectId,
+    custodyWalletId: input.wallet.id,
     walletId: input.wallet.walletId,
     counterpartyId: input.counterparty.id,
     sourceAddress: isOnramp ? null : input.walletAddress,
@@ -810,6 +821,7 @@ export async function createOfframpQuote(c: AppContext): Promise<Response> {
         organizationId: scope.auth.organizationId,
         projectId,
         counterpartyId: counterparty.id,
+        custodyWalletId: sourceWallet.id,
         walletId: sourceWallet.walletId,
         walletAddress: sourceWalletAddress,
         cryptoToken: input.cryptoToken,

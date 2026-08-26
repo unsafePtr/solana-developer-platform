@@ -133,7 +133,8 @@ function normalizePaymentTransfer(
 ): PaymentTransferSummary {
   const {
     id,
-    walletId,
+    custodyWalletId,
+    providerWalletId,
     status,
     signature,
     type,
@@ -160,7 +161,8 @@ function normalizePaymentTransfer(
   return Object.fromEntries(
     Object.entries({
       id: id ?? "",
-      walletId,
+      custodyWalletId: custodyWalletId ?? null,
+      providerWalletId: providerWalletId ?? "",
       status: status ?? "pending",
       signature: signature ?? null,
       type,
@@ -170,7 +172,7 @@ function normalizePaymentTransfer(
       token,
       amount,
       memo,
-      rampsMemo,
+      rampsMemo: rampsMemo ?? {},
       provider,
       counterpartyId,
       counterpartyDisplayName,
@@ -190,7 +192,7 @@ export async function fetchPaymentTransfers(
   request: SdpApiClient["request"],
   pageSize = 20,
   options: {
-    walletId?: string;
+    custodyWalletId?: string;
     includeObserved?: boolean;
   } = {}
 ): Promise<FetchResult<PaymentTransferSummary[]>> {
@@ -198,8 +200,8 @@ export async function fetchPaymentTransfers(
     const query = new URLSearchParams({
       page: "1",
       pageSize: String(pageSize),
-      ...(options.walletId ? { wallet: options.walletId } : {}),
-      ...(options.includeObserved === false ? { includeObserved: "false" } : {}),
+      ...(options.custodyWalletId ? { custodyWalletId: options.custodyWalletId } : {}),
+      includeObserved: String(options.includeObserved ?? false),
     }).toString();
     const response = await request(`/v1/payments/transfers?${query}`);
     if (!response.ok) {
@@ -229,16 +231,16 @@ export async function fetchPaymentTransfers(
 }
 
 function dedupeTransfers(transfers: PaymentTransferSummary[]): PaymentTransferSummary[] {
-  const seen = new Set<string>();
-
-  return transfers.filter((transfer) => {
+  const byKey = new Map<string, PaymentTransferSummary>();
+  for (const transfer of transfers) {
     const key = transfer.signature?.trim() || transfer.id;
-    if (!key || seen.has(key)) {
-      return false;
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (!existing || (existing.custodyWalletId === null && transfer.custodyWalletId !== null)) {
+      byKey.set(key, transfer);
     }
-    seen.add(key);
-    return true;
-  });
+  }
+  return [...byKey.values()];
 }
 
 export async function fetchDashboardPaymentTransfers(
@@ -258,10 +260,17 @@ export async function fetchDashboardPaymentTransfersForWallets(
     return fetchPaymentTransfers(request, pageSize);
   }
 
+  const observedAddresses = new Set<string>();
   const settledTransfers = await Promise.allSettled(
-    (walletsResult.data ?? []).map((wallet) =>
-      fetchPaymentTransfers(request, pageSize, { walletId: wallet.walletId })
-    )
+    (walletsResult.data ?? []).map((wallet) => {
+      const address = wallet.publicKey.trim();
+      const includeObserved = address.length > 0 && !observedAddresses.has(address);
+      if (includeObserved) observedAddresses.add(address);
+      return fetchPaymentTransfers(request, pageSize, {
+        custodyWalletId: wallet.id,
+        includeObserved,
+      });
+    })
   );
 
   const mergedTransfers: PaymentTransferSummary[] = [];

@@ -1,6 +1,10 @@
+import type { CustodyWalletMetadataResponse } from "@sdp/types";
 import { NextResponse } from "next/server";
 import { parseErrorMessage } from "@/app/dashboard/activity-format-utils";
-import { loadWalletActivity } from "@/app/dashboard/custody/wallet-activity.data";
+import {
+  loadWalletActivity,
+  type WalletActivityIdentity,
+} from "@/app/dashboard/custody/wallet-activity.data";
 import type { MessageKey, TranslationValues } from "@/i18n/messages";
 import { getTranslations } from "@/i18n/server";
 import { createTimedTrace, logRouteResult } from "@/lib/request-tracing";
@@ -11,6 +15,7 @@ interface VisibilityResult {
   ok: boolean;
   status?: number;
   error?: string;
+  wallet?: WalletActivityIdentity;
 }
 
 type Translate = (key: MessageKey, values?: TranslationValues) => string;
@@ -31,7 +36,18 @@ async function verifyWalletVisibility(
       };
     }
 
-    return { ok: true };
+    const body = (await response.json().catch(() => ({}))) as {
+      data?: CustodyWalletMetadataResponse;
+    };
+    const wallet = body.data?.wallet;
+    if (!wallet) {
+      return { ok: false, status: 502, error: t("DashboardCustody.walletActivityRequestFailed") };
+    }
+
+    return {
+      ok: true,
+      wallet: { custodyWalletId: wallet.id, providerWalletId: wallet.walletId },
+    };
   } catch (error) {
     return {
       ok: false,
@@ -78,7 +94,7 @@ export async function GET(request: Request, context: { params: Promise<{ walletI
     const visibility = await trace.step("verify_wallet_visibility", () =>
       verifyWalletVisibility(apiClient.request, resolvedWalletId, t)
     );
-    if (!visibility.ok) {
+    if (!visibility.ok || !visibility.wallet) {
       const status = visibility.status ?? 500;
       const response = NextResponse.json(
         {
@@ -100,8 +116,9 @@ export async function GET(request: Request, context: { params: Promise<{ walletI
       return response;
     }
 
+    const wallet = visibility.wallet;
     const result = await trace.step("load_wallet_activity", () =>
-      loadWalletActivity(apiClient.request, resolvedWalletId, t)
+      loadWalletActivity(apiClient.request, wallet, t)
     );
     const status = result.ok ? 200 : (result.status ?? 500);
     const response = NextResponse.json(

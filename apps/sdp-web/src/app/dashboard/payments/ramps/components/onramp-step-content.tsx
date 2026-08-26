@@ -148,7 +148,7 @@ export function OnrampStepContent({ wizard }: { wizard: OnrampWizard }) {
           direction="onramp"
           quote={quote}
           counterparty={selectedCounterparty}
-          sourceWalletId={fields.walletId}
+          sourceWalletId={selectedWallet.id}
           sourceWalletName={selectedWallet.label ?? selectedWallet.walletId}
           sourceWalletAddress={selectedWallet.publicKey}
           sourceTokenMint={null}

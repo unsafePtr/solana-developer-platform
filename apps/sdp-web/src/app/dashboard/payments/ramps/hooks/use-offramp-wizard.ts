@@ -96,11 +96,18 @@ export function useOfframpWizard(props: UseRampWizardProps) {
     advanceRequirementsBeforeQuote: true,
     selectionSchema: withdrawSelectionSchema,
     quoteEndpoint: "/api/dashboard/payments/ramps/offramp/quote",
-    buildQuotePayload: ({ fields, provider, selectedRampPair, cryptoToken, rampsMemo }) =>
+    buildQuotePayload: ({
+      fields,
+      selectedWallet,
+      provider,
+      selectedRampPair,
+      cryptoToken,
+      rampsMemo,
+    }) =>
       ({
         provider,
         counterpartyId: fields.counterpartyId,
-        sourceWallet: fields.walletId,
+        sourceWallet: selectedWallet.walletId,
         cryptoToken,
         fiatCurrency: selectedRampPair.fiatCurrency,
         cryptoAmount: fields.amount.trim(),
@@ -179,7 +186,12 @@ export function useOfframpWizard(props: UseRampWizardProps) {
     hasCryptoDepositInstruction && sourceTokenMint !== null && wizard.fields.walletId.length > 0;
 
   const sendCryptoToDeposit = async () => {
-    if (!cryptoDepositInstruction || !sourceTokenMint || !wizard.fields.walletId) {
+    if (
+      !cryptoDepositInstruction ||
+      !sourceTokenMint ||
+      !wizard.fields.walletId ||
+      !wizard.selectedWallet
+    ) {
       return;
     }
     if (onchainSendLoading || onchainSendResult) {
@@ -203,7 +215,7 @@ export function useOfframpWizard(props: UseRampWizardProps) {
     try {
       const transfer = await createTransfer(
         {
-          source: wizard.fields.walletId,
+          sourceCustodyWalletId: wizard.selectedWallet.id,
           destination: cryptoDepositInstruction.destinationAddress,
           token: sourceTokenMint,
           amount: wizard.fields.amount.trim(),
