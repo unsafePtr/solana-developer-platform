@@ -1,5 +1,6 @@
 import type { Permission } from "@sdp/types";
 import type { Context } from "hono";
+import { z } from "zod";
 import { asTransactionalClient, type DatabaseClient, getDb } from "@/db";
 import { parsePostgresJsonOr } from "@/db/postgres-utils";
 import {
@@ -22,12 +23,16 @@ const capabilities = new Map<
   { operationId: string; executionAttemptId: string; path: string }
 >();
 
-export interface WalletOperationExecutionRequest {
-  method: "POST";
-  path: string;
-  body: Record<string, unknown>;
-  idempotencyKey: string;
-}
+const walletOperationExecutionRequestSchema = z.object({
+  method: z.literal("POST"),
+  path: z.string().refine((path) => path.startsWith("/v1/")),
+  body: z.record(z.string(), z.unknown()),
+  idempotencyKey: z.string(),
+});
+
+const legacyPaymentExecutionBodySchema = z.object({ source: z.string() }).catchall(z.unknown());
+
+export type WalletOperationExecutionRequest = z.infer<typeof walletOperationExecutionRequestSchema>;
 
 export function walletOperationExecutionRequest(
   c: Context<{ Bindings: Env }>,
@@ -483,18 +488,13 @@ function startExecutionLeaseHeartbeat(
 }
 
 function readExecutionRequest(operation: WalletOperationRow): WalletOperationExecutionRequest {
-  const value = operation.raw_payload.executionRequest;
-  if (
-    !isObject(value) ||
-    value.method !== "POST" ||
-    typeof value.path !== "string" ||
-    !value.path.startsWith("/v1/") ||
-    !isObject(value.body) ||
-    typeof value.idempotencyKey !== "string"
-  ) {
+  const parsedRequest = walletOperationExecutionRequestSchema.safeParse(
+    operation.raw_payload.executionRequest
+  );
+  if (!parsedRequest.success) {
     throw new AppError("INTERNAL_ERROR", "Wallet operation has no executable request envelope");
   }
-  const request = value as unknown as WalletOperationExecutionRequest;
+  const request = parsedRequest.data;
   const expectedPaymentPath =
     operation.operation_type === "payment_transfer_execute"
       ? "/v1/payments/transfers"
@@ -504,10 +504,12 @@ function readExecutionRequest(operation: WalletOperationRow): WalletOperationExe
   if (expectedPaymentPath === null) {
     return request;
   }
+  const parsedBody = legacyPaymentExecutionBodySchema.safeParse(request.body);
   if (
     !operation.custody_wallet_id ||
     request.path !== expectedPaymentPath ||
-    request.body.source !== operation.wallet_id
+    !parsedBody.success ||
+    parsedBody.data.source !== operation.wallet_id
   ) {
     throw new AppError(
       "INTERNAL_ERROR",
@@ -517,7 +519,7 @@ function readExecutionRequest(operation: WalletOperationRow): WalletOperationExe
 
   // HOO-1023: remove after rollback support ends and the release audit reports
   // no nonterminal legacy Payments envelopes.
-  const { source: _source, ...body } = request.body;
+  const { source: _source, ...body } = parsedBody.data;
   return {
     ...request,
     body: { ...body, sourceCustodyWalletId: operation.custody_wallet_id },

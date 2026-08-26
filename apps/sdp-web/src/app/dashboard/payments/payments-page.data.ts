@@ -4,8 +4,11 @@ import type {
   PaymentsDashboardWallet,
   PaymentTransferSummary,
 } from "@sdp/types";
+import { z } from "zod";
 import type { SdpApiClient } from "@/lib/sdp-api";
 import { parsePaymentApiErrorText } from "./payment-api-errors";
+
+const rampsMemoSchema = z.record(z.string(), z.string());
 
 export interface FetchResult<T> {
   ok: boolean;
@@ -161,6 +164,10 @@ function normalizePaymentTransfer(
   if (typeof providerWalletId !== "string" || providerWalletId.trim().length === 0) {
     throw new Error("Malformed transfer response: providerWalletId is missing");
   }
+  const parsedRampsMemo = rampsMemoSchema.safeParse(rampsMemo);
+  if (!parsedRampsMemo.success) {
+    throw new Error("Malformed transfer response: rampsMemo is missing or invalid");
+  }
 
   return Object.fromEntries(
     Object.entries({
@@ -176,7 +183,7 @@ function normalizePaymentTransfer(
       token,
       amount,
       memo,
-      rampsMemo: rampsMemo ?? {},
+      rampsMemo: parsedRampsMemo.data,
       provider,
       counterpartyId,
       counterpartyDisplayName,

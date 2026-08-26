@@ -19,6 +19,7 @@ describe("fetchDashboardPaymentTransfersForWallets", () => {
               signature: `signature-${custodyWalletId}`,
               token: "USDC",
               amount: "1",
+              rampsMemo: {},
               createdAt: "2026-07-17T15:00:00.000Z",
             },
           ],
@@ -66,6 +67,7 @@ describe("fetchDashboardPaymentTransfersForWallets", () => {
               signature: "shared-signature",
               token: "USDC",
               amount: "1",
+              rampsMemo: {},
               createdAt: "2026-07-17T15:00:00.000Z",
             },
           ],
@@ -144,6 +146,7 @@ describe("fetchPaymentTransfers", () => {
                 deliveryMode: "crypto",
                 fiatCurrency: "USD",
                 fiatAmount: "1250",
+                rampsMemo: {},
               },
             ],
           }),
@@ -193,4 +196,29 @@ describe("fetchPaymentTransfers", () => {
       });
     }
   );
+
+  it("fails closed when rampsMemo is missing", async () => {
+    const request = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "transfer-1",
+                providerWalletId: "wallet-1",
+                status: "confirmed",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+    );
+
+    const result = await fetchPaymentTransfers(request, 5, { includeObserved: false });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Malformed transfer response: rampsMemo is missing or invalid",
+    });
+  });
 });
