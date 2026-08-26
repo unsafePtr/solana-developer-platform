@@ -10,7 +10,10 @@
   "pnpm": {
     "peerDependencyRules": {
       "allowedVersions": {
-        "@solana/kit": "^6.5.0"
+        "@solana/pay>@solana/kit": "^7.0.0",
+        "@solana/pay>@solana/keys": "^7.0.0",
+        "@solana/pay>@solana/rpc-subscriptions-api": "^7.0.0",
+        "@solana/pay>@solana/rpc-subscriptions-spec": "^7.0.0"
       }
     },
     "overrides": {
@@ -102,8 +105,8 @@
     "yaml": "2.9.0"
   },
   "overrides": {
-    "@solana/rpc-spec": "6.5.0",
-    "@solana/kit": "6.5.0"
+    "@solana/rpc-spec": "7.1.1",
+    "@solana/kit": "7.1.1"
   },
   "workspaces": {
     "packages": [
@@ -112,18 +115,19 @@
     ],
     "catalog": {
       "@solana-program/system": "0.13.0",
-      "@solana-program/token-2022": "0.14.0",
-      "@solana/addresses": "6.9.0",
-      "@solana/codecs": "6.8.0",
-      "@solana/instructions": "6.10.0",
-      "@solana/keys": "6.10.0",
-      "@solana/kit": "6.8.0",
+      "@solana-program/token": "0.15.0",
+      "@solana-program/token-2022": "0.15.0",
+      "@solana/addresses": "7.1.1",
+      "@solana/codecs": "7.1.1",
+      "@solana/instructions": "7.1.1",
+      "@solana/keys": "7.1.1",
+      "@solana/kit": "7.1.1",
       "@solana/mosaic-sdk": "0.1.1",
-      "@solana/programs": "6.10.0",
-      "@solana/rpc": "6.10.0",
-      "@solana/signers": "6.9.0",
-      "@solana/sysvars": "6.10.0",
-      "@solana/transactions": "6.9.0"
+      "@solana/programs": "7.1.1",
+      "@solana/rpc": "7.1.1",
+      "@solana/signers": "7.1.1",
+      "@solana/sysvars": "7.1.1",
+      "@solana/transactions": "7.1.1"
     }
   }
 }

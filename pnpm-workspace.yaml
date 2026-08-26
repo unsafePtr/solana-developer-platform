@@ -3,24 +3,30 @@ packages:
   - packages/*
 
 catalog:
-  # Trial upgrade to satisfy upstream Solana keychain v1 peer requirements.
+  # Kit 7 is what the workspace's own dependencies already ask for: kora,
+  # subscriptions, surfpool and every @solana-program client peer '^7.0.0'.
+  # They were resolving against Kit 6 only because strictPeerDependencies was
+  # off. @solana/pay is the one holdout, covered by peerDependencyRules.
   '@solana-program/system': 0.13.0
   '@solana-program/token': 0.15.0
   '@solana-program/token-2022': 0.15.0
-  '@solana/addresses': 6.10.0
-  '@solana/codecs': 6.10.0
-  '@solana/instructions': 6.10.0
-  '@solana/keys': 6.10.0
-  '@solana/kit': 6.10.0
+  '@solana/addresses': 7.1.1
+  '@solana/codecs': 7.1.1
+  '@solana/instructions': 7.1.1
+  '@solana/keys': 7.1.1
+  '@solana/kit': 7.1.1
   '@solana/mosaic-sdk': 0.1.1
-  '@solana/programs': 6.10.0
-  '@solana/rpc': 6.10.0
-  '@solana/signers': 6.10.0
-  '@solana/sysvars': 6.10.0
-  '@solana/transactions': 6.10.0
+  '@solana/programs': 7.1.1
+  '@solana/rpc': 7.1.1
+  '@solana/signers': 7.1.1
+  '@solana/sysvars': 7.1.1
+  '@solana/transactions': 7.1.1
 
-# Relaxed for the keychain v1 peer trial; flip back to true once its peer
-# ranges settle.
+# Still relaxed, and no longer only for the keychain trial. A from-scratch
+# resolve under `true` fails on peer ranges this repo does not control:
+# dozens of `typescript@^5.0.0: found 6.0.3` across the Solana packages,
+# @solana/kora's undeclared kit-plugin-* peers, and klend-sdk's kit ^3.0
+# subtree. None are Kit-7 specific. Flipping this needs its own PR.
 strictPeerDependencies: false
 
 saveExact: true
