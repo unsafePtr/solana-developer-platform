@@ -1,5 +1,5 @@
-import type { CustodyWalletMetadataResponse } from "@sdp/types";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { parseErrorMessage } from "@/app/dashboard/activity-format-utils";
 import {
   loadWalletActivity,
@@ -20,6 +20,15 @@ interface VisibilityResult {
 
 type Translate = (key: MessageKey, values?: TranslationValues) => string;
 
+const walletActivityMetadataEnvelopeSchema = z.object({
+  data: z.object({
+    wallet: z.object({
+      id: z.string().trim().min(1),
+      walletId: z.string().trim().min(1),
+    }),
+  }),
+});
+
 async function verifyWalletVisibility(
   request: SdpApiClient["request"],
   walletId: string,
@@ -36,13 +45,14 @@ async function verifyWalletVisibility(
       };
     }
 
-    const body = (await response.json().catch(() => ({}))) as {
-      data?: CustodyWalletMetadataResponse;
-    };
-    const wallet = body.data?.wallet;
-    if (!wallet) {
+    const parsed = walletActivityMetadataEnvelopeSchema.safeParse(
+      await response.json().catch(() => null)
+    );
+    if (!parsed.success) {
       return { ok: false, status: 502, error: t("DashboardCustody.walletActivityRequestFailed") };
     }
+
+    const wallet = parsed.data.data.wallet;
 
     return {
       ok: true,

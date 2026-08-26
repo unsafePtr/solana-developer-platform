@@ -158,11 +158,15 @@ function normalizePaymentTransfer(
     updatedAt,
   } = transfer;
 
+  if (typeof providerWalletId !== "string" || providerWalletId.trim().length === 0) {
+    throw new Error("Malformed transfer response: providerWalletId is missing");
+  }
+
   return Object.fromEntries(
     Object.entries({
       id: id ?? "",
       custodyWalletId: custodyWalletId ?? null,
-      providerWalletId: providerWalletId ?? "",
+      providerWalletId,
       status: status ?? "pending",
       signature: signature ?? null,
       type,

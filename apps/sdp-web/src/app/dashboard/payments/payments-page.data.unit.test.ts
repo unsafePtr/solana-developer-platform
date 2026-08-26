@@ -14,6 +14,7 @@ describe("fetchDashboardPaymentTransfersForWallets", () => {
           data: [
             {
               id: `transfer-${custodyWalletId}`,
+              providerWalletId: `provider-wallet-${custodyWalletId}`,
               status: "confirmed",
               signature: `signature-${custodyWalletId}`,
               token: "USDC",
@@ -164,4 +165,32 @@ describe("fetchPaymentTransfers", () => {
       fiatAmount: "1250",
     });
   });
+
+  it.each([undefined, "", "   "])(
+    "fails closed when providerWalletId is %j",
+    async (providerWalletId) => {
+      const request = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "transfer-1",
+                  providerWalletId,
+                  status: "confirmed",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+      );
+
+      const result = await fetchPaymentTransfers(request, 5, { includeObserved: false });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Malformed transfer response: providerWalletId is missing",
+      });
+    }
+  );
 });
