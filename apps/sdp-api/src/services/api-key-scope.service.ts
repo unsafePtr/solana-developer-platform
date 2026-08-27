@@ -486,6 +486,30 @@ export function getAllowedApiKeyWalletIdsForPermissions(
     .map((binding) => binding.walletId);
 }
 
+export function getAllowedApiKeyWalletAuthorizationForPermissions(
+  auth: ApiKeyContext,
+  requiredPermissions: Permission[] = []
+): { custodyWalletIds: string[]; providerWalletIds: string[] } | null {
+  if (auth.authType !== "api_key" || !hasSelectedWalletScope(auth)) {
+    return null;
+  }
+
+  const bindings = normalizeBindings(auth).filter((binding) =>
+    hasBindingPermission(binding, requiredPermissions)
+  );
+  const custodyWalletIds = bindings.map((binding) => {
+    if (typeof binding.custodyWalletId !== "string" || binding.custodyWalletId.length === 0) {
+      throw new AppError("INTERNAL_ERROR", "API key wallet authorization scope is inconsistent");
+    }
+    return binding.custodyWalletId;
+  });
+
+  return {
+    custodyWalletIds,
+    providerWalletIds: bindings.map((binding) => binding.walletId),
+  };
+}
+
 export function filterApiKeyWallets<T extends { walletId: string }>(
   auth: ApiKeyContext,
   wallets: T[],

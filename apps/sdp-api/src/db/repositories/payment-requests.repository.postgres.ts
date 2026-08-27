@@ -1,6 +1,7 @@
 import type { PaymentRequestLifecycleEvent, PaymentRequestStatus } from "@sdp/types";
 import type { AppDb } from "@/db";
 import { internalError } from "@/lib/errors";
+import { parseNullableCustodyWalletId } from "./payment-execution-identity";
 import type {
   CreatePaymentRequestInput,
   ListPaymentRequestsInput,
@@ -22,7 +23,7 @@ function mapPaymentRequestRow(row: Record<string, unknown>): PaymentRequestRow {
     organization_id: row.organization_id as string,
     project_id: row.project_id as string | null,
     counterparty_id: row.counterparty_id as string | null,
-    custody_wallet_id: (row.custody_wallet_id as string | null | undefined) ?? null,
+    custody_wallet_id: parseNullableCustodyWalletId(row.custody_wallet_id),
     wallet_id: row.wallet_id as string,
     destination_address: row.destination_address as string,
     token: row.token as string,

@@ -1,5 +1,6 @@
 import type { AppDb, DatabaseExecutor } from "@/db";
 import { internalError } from "@/lib/errors";
+import { parseNullableCustodyWalletId } from "./payment-execution-identity";
 import type {
   CreatePaymentTransferBatchInput,
   CreatePaymentTransferBatchWithRecipientsInput,
@@ -35,7 +36,7 @@ function mapPaymentTransferBatchRow(row: Record<string, unknown>): PaymentTransf
     organization_id: row.organization_id as string,
     project_id: row.project_id as string,
     external_id: (row.external_id as string | null | undefined) ?? null,
-    source_custody_wallet_id: (row.source_custody_wallet_id as string | null | undefined) ?? null,
+    source_custody_wallet_id: parseNullableCustodyWalletId(row.source_custody_wallet_id),
     source_wallet_id: row.source_wallet_id as string,
     source_address: row.source_address as string,
     token: row.token as string,

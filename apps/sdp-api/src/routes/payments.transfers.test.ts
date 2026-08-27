@@ -345,6 +345,33 @@ async function seedWalletControlProfile(params: {
 describe("Payments routes — transfers", () => {
   installPaymentsRouteTestHooks();
 
+  it("describes an unknown exact source without rejecting SDP Wallet IDs", async () => {
+    const response = await app.request(
+      "/v1/payments/transfers",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TEST_API_KEY.raw}`,
+        },
+        body: JSON.stringify({
+          sourceCustodyWalletId: "cwlt_missing",
+          destination: TEST_SOLANA_ADDRESSES.wallet2,
+          token: "SOL",
+          amount: "0.1",
+        }),
+      },
+      env
+    );
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { error: { code: string; message: string } };
+    expect(body.error).toEqual({
+      code: "NOT_FOUND",
+      message: "Wallet not found. Verify the wallet identifier supplied to this endpoint.",
+    });
+  });
+
   it("activates immutable wallet control profile revisions from wallet policy updates", async () => {
     await getDb(env)
       .prepare("UPDATE custody_configs SET project_id = ? WHERE id = ?")

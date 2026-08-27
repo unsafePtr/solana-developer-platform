@@ -2,10 +2,7 @@ import { z } from "zod";
 import { getAuth, requireProjectId } from "@/lib/auth";
 import { AppError, badRequestParams, badRequestQuery, notFound } from "@/lib/errors";
 import { paginated, success } from "@/lib/response";
-import {
-  getAllowedApiKeyCustodyWalletIdsForPermissions,
-  getAllowedApiKeyWalletIdsForPermissions,
-} from "@/services/api-key-scope.service";
+import { getAllowedApiKeyWalletAuthorizationForPermissions } from "@/services/api-key-scope.service";
 import { normalizePaymentToken } from "@/services/payment-operation.service";
 import { type AppContext, getPaymentTransferBatchesRepository } from "../../context";
 import { listTransferBatchesQuerySchema, transferBatchIdParamsSchema } from "../../schemas";
@@ -29,14 +26,13 @@ export async function listTransferBatches(c: AppContext) {
 
   const auth = getAuth(c);
   const projectId = requireProjectId(c);
-  const allowedCustodyWalletIds = getAllowedApiKeyCustodyWalletIdsForPermissions(auth, [
+  const walletAuthorization = getAllowedApiKeyWalletAuthorizationForPermissions(auth, [
     "payments:read",
   ]);
-  const allowedProviderWalletIds = getAllowedApiKeyWalletIdsForPermissions(auth, ["payments:read"]);
   if (query.data.sourceCustodyWalletId) {
     if (
-      allowedCustodyWalletIds &&
-      !allowedCustodyWalletIds.includes(query.data.sourceCustodyWalletId)
+      walletAuthorization &&
+      !walletAuthorization.custodyWalletIds.includes(query.data.sourceCustodyWalletId)
     ) {
       throw new AppError("FORBIDDEN", "API key is not authorized for the requested wallet");
     }
@@ -46,12 +42,9 @@ export async function listTransferBatches(c: AppContext) {
     projectId,
     sourceCustodyWalletId: query.data.sourceCustodyWalletId,
     walletAuthorization:
-      query.data.sourceCustodyWalletId || allowedCustodyWalletIds === null
+      query.data.sourceCustodyWalletId || walletAuthorization === null
         ? undefined
-        : {
-            custodyWalletIds: allowedCustodyWalletIds,
-            providerWalletIds: allowedProviderWalletIds ?? [],
-          },
+        : walletAuthorization,
     token: query.data.token ? normalizePaymentToken(query.data.token, c.env) : undefined,
     status: query.data.status,
     externalId: query.data.externalId,

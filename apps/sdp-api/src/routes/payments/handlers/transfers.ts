@@ -59,8 +59,7 @@ import { logEvent } from "@/runtime/money-path-events";
 import {
   assertApiKeyWalletAccess,
   assertFreshApiKeyCustodyWalletAccess,
-  getAllowedApiKeyCustodyWalletIdsForPermissions,
-  getAllowedApiKeyWalletIdsForPermissions,
+  getAllowedApiKeyWalletAuthorizationForPermissions,
 } from "@/services/api-key-scope.service";
 import {
   assertPaymentProjectScope,
@@ -409,6 +408,7 @@ export async function admitTransferRuntimeExecution(
   c: AppContext,
   extraction: PolicyGateExtraction
 ): Promise<void> {
+  // SAFETY: this callback is wired only beside extractTransferPolicyCandidate in payments/index.ts.
   const { operation } = extraction.resolved as TransferPolicyResolved;
   await admitExactPaymentWallet(c, operation.sourceWallet, ["payments:write"]);
 }
@@ -1428,10 +1428,9 @@ export async function listTransfers(c: AppContext) {
   const auth = getAuth(c);
   const query = listTransfersQuerySchema.safeParse(c.req.query());
   if (!query.success) throw badRequestQuery();
-  const allowedCustodyWalletIds = getAllowedApiKeyCustodyWalletIdsForPermissions(auth, [
+  const walletAuthorization = getAllowedApiKeyWalletAuthorizationForPermissions(auth, [
     "payments:read",
   ]);
-  const allowedProviderWalletIds = getAllowedApiKeyWalletIdsForPermissions(auth, ["payments:read"]);
 
   const {
     page,
@@ -1478,7 +1477,7 @@ export async function listTransfers(c: AppContext) {
 
   let exactWallet: CustodyWallet | null = null;
   if (custodyWalletId) {
-    if (allowedCustodyWalletIds && !allowedCustodyWalletIds.includes(custodyWalletId)) {
+    if (walletAuthorization && !walletAuthorization.custodyWalletIds.includes(custodyWalletId)) {
       throw new AppError("FORBIDDEN", "API key is not authorized for the requested wallet");
     }
     if (includeObserved) {
@@ -1673,8 +1672,9 @@ export async function listTransfers(c: AppContext) {
     // DB-only path: exact rows are filtered by the canonical SDP Wallet ID.
     if (
       !custodyWalletId &&
-      allowedCustodyWalletIds?.length === 0 &&
-      allowedProviderWalletIds?.length === 0
+      walletAuthorization !== null &&
+      walletAuthorization.custodyWalletIds.length === 0 &&
+      walletAuthorization.providerWalletIds.length === 0
     ) {
       return paginated(c, [], { total: 0, page, pageSize });
     }
@@ -1685,12 +1685,7 @@ export async function listTransfers(c: AppContext) {
       projectId: auth.projectId,
       custodyWalletId,
       walletAuthorization:
-        custodyWalletId || allowedCustodyWalletIds === null
-          ? undefined
-          : {
-              custodyWalletIds: allowedCustodyWalletIds,
-              providerWalletIds: allowedProviderWalletIds ?? [],
-            },
+        custodyWalletId || walletAuthorization === null ? undefined : walletAuthorization,
       counterpartyId,
       search,
       token: tokenFilter,

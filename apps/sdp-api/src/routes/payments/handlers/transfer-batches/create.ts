@@ -176,6 +176,7 @@ export async function admitTransferBatchRuntimeExecution(
   c: AppContext,
   extraction: PolicyGateExtraction
 ): Promise<void> {
+  // SAFETY: this callback is wired only beside extractTransferBatchPolicyCandidate in payments/index.ts.
   const resolved = extraction.resolved as TransferBatchGateResolved;
   await admitExactPaymentWallet(c, resolved.sourceWallet, ["payments:write"]);
 }

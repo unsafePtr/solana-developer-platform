@@ -1,6 +1,7 @@
 import { type PaymentTransferStatus, tokenFilterAliases } from "@sdp/types";
 import type { DatabaseExecutor } from "@/db";
 import { assertTenantClaim, type TenantScope, TenantScopeViolationError } from "@/lib/tenant-scope";
+import { parseNullableCustodyWalletId } from "./payment-execution-identity";
 import type {
   CreatePaymentTransferInput,
   ListTransfersByStatusInput,
@@ -154,7 +155,7 @@ function mapTransferRow(row: Record<string, unknown>): PaymentTransferRow {
     id: row.id as string,
     organization_id: row.organization_id as string,
     project_id: (row.project_id as string | null | undefined) ?? null,
-    custody_wallet_id: (row.custody_wallet_id as string | null | undefined) ?? null,
+    custody_wallet_id: parseNullableCustodyWalletId(row.custody_wallet_id),
     wallet_id: row.wallet_id as string,
     counterparty_id: row.counterparty_id as string | null,
     counterparty_display_name: row.counterparty_display_name as string | null | undefined,

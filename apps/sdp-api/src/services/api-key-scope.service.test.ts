@@ -7,6 +7,7 @@ import {
   assertGrantableApiKeyPermissions,
   filterApiKeyWallets,
   getAllowedApiKeyCustodyWalletIdsForPermissions,
+  getAllowedApiKeyWalletAuthorizationForPermissions,
   getAllowedApiKeyWalletIds,
   getAllowedApiKeyWalletIdsForPermissions,
   parseWalletBindingPatch,
@@ -131,6 +132,17 @@ describe("api key scope service", () => {
       "cwal_exact",
     ]);
     expect(resolveApiKeyCustodyWalletId(auth, "wal_shared", ["wallets:read"])).toBe("cwal_exact");
+  });
+
+  it("fails loudly when paired wallet authorization lacks an exact custody wallet ID", () => {
+    const auth = createApiKeyAuth({
+      walletScope: "selected",
+      walletBindings: [{ walletId: "wal_legacy", permissions: ["payments:read"] }],
+    });
+
+    expect(() =>
+      getAllowedApiKeyWalletAuthorizationForPermissions(auth, ["payments:read"])
+    ).toThrowError(AppError);
   });
 
   it("fails closed when selected scope has no usable exact binding", () => {
